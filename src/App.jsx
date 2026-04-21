@@ -1,7 +1,6 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 
-// ─── SUPABASE CONFIG ─────────────────────────────────────────
 const SUPABASE_URL = "https://ppilsjtlglteeezrbktg.supabase.co";
 const SUPABASE_KEY = "sb_publishable_YS6JywbZMaUyZWxYLwaHAg_qQS18gIk";
 
@@ -30,7 +29,6 @@ async function sbSet(table, id, data) {
   } catch {}
 }
 
-// ─── CONSTANTS ───────────────────────────────────────────────
 const CIRCLES = {
   FIRST: { label: "First Circle", short: "1st", color: "#C8522A", bg: "#FFF0EB" },
   SECOND: { label: "Second Circle", short: "2nd", color: "#B07D2E", bg: "#FFF8EB" },
@@ -63,7 +61,6 @@ const DEFAULT_CAMPAIGN = {
   circles: { FIRST: 30000, SECOND: 25000, THIRD: 15000, COMMUNITY: 20000, MATCHING: 10000 },
 };
 
-// ─── APP ─────────────────────────────────────────────────────
 export default function App() {
   const [page, setPage] = useState("dashboard");
   const [donors, setDonors] = useState([]);
@@ -74,6 +71,16 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [loaded, setLoaded] = useState(false);
+
+  // ─── GLOBAL PERSISTENT FILTERS ───────────────────────────
+  const [filters, setFilters] = useState({
+    circle: "ALL",
+    status: "ALL",
+    search: "",
+    hideAssigned: false,   // מסתיר מי שכבר שויך
+    hideDonated: false,    // מסתיר מי שכבר תרם
+  });
+
   const toastRef = useRef();
   const saveTimer = useRef({});
 
@@ -83,7 +90,6 @@ export default function App() {
     toastRef.current = setTimeout(() => setToast(null), 2200);
   };
 
-  // Load from Supabase on start
   useEffect(() => {
     (async () => {
       setSyncing(true);
@@ -100,35 +106,14 @@ export default function App() {
     })();
   }, []);
 
-  // Save donors with debounce
-  useEffect(() => {
-    if (!loaded) return;
-    clearTimeout(saveTimer.current.donors);
-    saveTimer.current.donors = setTimeout(() => {
-      sbSet("donors", "all", donors);
-    }, 1000);
-  }, [donors, loaded]);
-
-  // Save campaign with debounce
-  useEffect(() => {
-    if (!loaded) return;
-    clearTimeout(saveTimer.current.campaign);
-    saveTimer.current.campaign = setTimeout(() => {
-      sbSet("campaign", "main", campaign);
-    }, 1000);
-  }, [campaign, loaded]);
-
-  // Save matchers with debounce
-  useEffect(() => {
-    if (!loaded) return;
-    clearTimeout(saveTimer.current.matchers);
-    saveTimer.current.matchers = setTimeout(() => {
-      sbSet("matchers", "all", matchers);
-    }, 1000);
-  }, [matchers, loaded]);
+  useEffect(() => { if (!loaded) return; clearTimeout(saveTimer.current.donors); saveTimer.current.donors = setTimeout(() => sbSet("donors", "all", donors), 1000); }, [donors, loaded]);
+  useEffect(() => { if (!loaded) return; clearTimeout(saveTimer.current.campaign); saveTimer.current.campaign = setTimeout(() => sbSet("campaign", "main", campaign), 1000); }, [campaign, loaded]);
+  useEffect(() => { if (!loaded) return; clearTimeout(saveTimer.current.matchers); saveTimer.current.matchers = setTimeout(() => sbSet("matchers", "all", matchers), 1000); }, [matchers, loaded]);
 
   const updateDonor = useCallback((id, upd) =>
     setDonors(p => p.map(d => d.id === id ? { ...d, ...upd } : d)), []);
+
+  const setFilter = (key, val) => setFilters(f => ({ ...f, [key]: val }));
 
   const raised = donors.filter(d => d.status === "DONATED").reduce((s, d) => s + (d.actualAmount || 0), 0);
   const pledged = donors.filter(d => d.status === "PLEDGED").reduce((s, d) => s + (d.estimatedAmount || 0), 0);
@@ -154,7 +139,7 @@ export default function App() {
       <Nav page={page} setPage={setPage} />
       <main>
         {page === "dashboard" && <Dashboard donors={donors} campaign={campaign} raised={raised} pledged={pledged} matching={matching} peak={peakMode} onSelect={setSelDonor} />}
-        {page === "donors" && <DonorList donors={donors} setDonors={setDonors} onSelect={setSelDonor} showToast={showToast} />}
+        {page === "donors" && <DonorList donors={donors} setDonors={setDonors} onSelect={setSelDonor} showToast={showToast} filters={filters} setFilter={setFilter} />}
         {page === "import" && <ImportPage donors={donors} setDonors={setDonors} onSelect={setSelDonor} showToast={showToast} />}
         {page === "matching" && <MatchPage matchers={matchers} setMatchers={setMatchers} campaign={campaign} matching={matching} showToast={showToast} />}
         {page === "settings" && <SettingsPage campaign={campaign} setCampaign={setCampaign} donors={donors} showToast={showToast} />}
@@ -337,16 +322,17 @@ function AL({ title, donors, onSel }) {
   );
 }
 
-function DonorList({ donors, setDonors, onSelect, showToast }) {
-  const [cf, setCf] = useState("ALL");
-  const [sf, setSf] = useState("ALL");
-  const [q, setQ] = useState("");
+// ─── DONOR LIST ── עם סינונים גלובליים שנשמרים ───────────────
+function DonorList({ donors, setDonors, onSelect, showToast, filters, setFilter }) {
   const [sel, setSel] = useState(new Set());
 
+  // החל סינונים
   const list = donors.filter(d => {
-    if (cf !== "ALL" && d.circle !== cf) return false;
-    if (sf !== "ALL" && d.status !== sf) return false;
-    if (q && !d.name.toLowerCase().includes(q.toLowerCase()) && !(d.phone || "").includes(q)) return false;
+    if (filters.hideAssigned && d.circle !== "UNASSIGNED") return false;
+    if (filters.hideDonated && d.status === "DONATED") return false;
+    if (filters.circle !== "ALL" && d.circle !== filters.circle) return false;
+    if (filters.status !== "ALL" && d.status !== filters.status) return false;
+    if (filters.search && !d.name.toLowerCase().includes(filters.search.toLowerCase()) && !(d.phone || "").includes(filters.search)) return false;
     return true;
   });
 
@@ -367,8 +353,20 @@ function DonorList({ donors, setDonors, onSelect, showToast }) {
     return () => window.removeEventListener("keydown", h);
   }, [sel]);
 
-  const assign = k => { setDonors(p => p.map(d => sel.has(d.id) ? { ...d, circle: k } : d)); showToast(`${sel.size} → ${CIRCLES[k].label}`); clr(); };
+  const assign = k => {
+    setDonors(p => p.map(d => sel.has(d.id) ? { ...d, circle: k } : d));
+    showToast(`${sel.size} → ${CIRCLES[k].label}`);
+    clr();
+  };
+
   const unassigned = donors.filter(d => d.circle === "UNASSIGNED").length;
+  const activeFiltersCount = [
+    filters.circle !== "ALL",
+    filters.status !== "ALL",
+    filters.search !== "",
+    filters.hideAssigned,
+    filters.hideDonated,
+  ].filter(Boolean).length;
 
   if (donors.length === 0) return (
     <div style={S.pg}>
@@ -382,33 +380,60 @@ function DonorList({ donors, setDonors, onSelect, showToast }) {
 
   return (
     <div style={S.pg}>
-      <input style={S.inp} placeholder="🔍 Search name or phone..." value={q} onChange={e => setQ(e.target.value)} />
+      {/* SEARCH */}
+      <input style={S.inp} placeholder="🔍 Search name or phone..." value={filters.search} onChange={e => setFilter("search", e.target.value)} />
+
+      {/* FILTERS ROW */}
       <div style={{ display: "flex", gap: 8, margin: "8px 0 10px" }}>
-        <select style={{ ...S.sel, flex: 1 }} value={cf} onChange={e => { setCf(e.target.value); clr(); }}>
+        <select style={{ ...S.sel, flex: 1 }} value={filters.circle} onChange={e => { setFilter("circle", e.target.value); clr(); }}>
           <option value="ALL">All Circles</option>
           {Object.entries(CIRCLES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
-        <select style={{ ...S.sel, flex: 1 }} value={sf} onChange={e => { setSf(e.target.value); clr(); }}>
+        <select style={{ ...S.sel, flex: 1 }} value={filters.status} onChange={e => { setFilter("status", e.target.value); clr(); }}>
           <option value="ALL">All Status</option>
           {STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
         </select>
       </div>
 
-      {unassigned > 0 && cf !== "UNASSIGNED" && (
+      {/* QUICK FILTER TOGGLES */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+        <button
+          style={{ ...S.toggleBtn, background: filters.hideAssigned ? "#C8522A" : "#f0f0f0", color: filters.hideAssigned ? "#fff" : "#555" }}
+          onClick={() => { setFilter("hideAssigned", !filters.hideAssigned); clr(); }}>
+          {filters.hideAssigned ? "✓" : ""} הסתר משויכים
+        </button>
+        <button
+          style={{ ...S.toggleBtn, background: filters.hideDonated ? "#2E7D32" : "#f0f0f0", color: filters.hideDonated ? "#fff" : "#555" }}
+          onClick={() => { setFilter("hideDonated", !filters.hideDonated); clr(); }}>
+          {filters.hideDonated ? "✓" : ""} הסתר תורמים
+        </button>
+        {activeFiltersCount > 0 && (
+          <button
+            style={{ ...S.toggleBtn, background: "#1A1A2E", color: "#fff" }}
+            onClick={() => { setFilter("circle", "ALL"); setFilter("status", "ALL"); setFilter("search", ""); setFilter("hideAssigned", false); setFilter("hideDonated", false); clr(); }}>
+            נקה הכל ✕
+          </button>
+        )}
+      </div>
+
+      {/* UNASSIGNED WARNING */}
+      {unassigned > 0 && !filters.hideAssigned && filters.circle !== "UNASSIGNED" && (
         <button style={{ width: "100%", background: "#FFF8EB", border: "1.5px solid #B07D2E", borderRadius: 10, padding: "10px 14px", color: "#B07D2E", fontWeight: 700, fontSize: 13, cursor: "pointer", marginBottom: 10, textAlign: "left" }}
-          onClick={() => { setCf("UNASSIGNED"); setSf("ALL"); setQ(""); }}>
-          ⚠️ {unassigned} unassigned donors — tap to assign circles
+          onClick={() => { setFilter("circle", "UNASSIGNED"); setFilter("hideAssigned", false); clr(); }}>
+          ⚠️ {unassigned} לא משויכים — לחץ לשיוך
         </button>
       )}
 
+      {/* COUNT + SELECT ALL */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <span style={{ fontSize: 13, color: "#aaa" }}>{list.length} donors</span>
+        <span style={{ fontSize: 13, color: "#aaa" }}>{list.length} donors{activeFiltersCount > 0 ? ` (מסונן)` : ""}</span>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           {sel.size > 0 && <span style={{ fontSize: 13, color: "#C8522A", fontWeight: 700 }}>{sel.size} selected</span>}
           <button style={S.lnk} onClick={sel.size > 0 ? clr : () => setSel(new Set(list.map(d => d.id)))}>{sel.size > 0 ? "Clear" : "Select All"}</button>
         </div>
       </div>
 
+      {/* BULK ASSIGN */}
       {sel.size > 0 && (
         <div style={{ background: "#1A1A2E", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
           <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Assign {sel.size} donors:</div>
@@ -423,6 +448,7 @@ function DonorList({ donors, setDonors, onSelect, showToast }) {
         </div>
       )}
 
+      {/* LIST */}
       {list.map(d => (
         <div key={d.id} style={{ ...S.drow, background: sel.has(d.id) ? "#EBF5F2" : "#fff" }}>
           <div style={{ padding: "15px 8px 15px 14px", cursor: "pointer" }} onClick={() => tog(d.id)}>
@@ -441,6 +467,12 @@ function DonorList({ donors, setDonors, onSelect, showToast }) {
           </button>
         </div>
       ))}
+
+      {list.length === 0 && (
+        <div style={{ textAlign: "center", color: "#aaa", padding: "40px 20px", fontSize: 14 }}>
+          אין תוצאות לסינון הנוכחי
+        </div>
+      )}
     </div>
   );
 }
@@ -840,4 +872,5 @@ const S = {
   lnk: { background: "none", border: "none", color: "#C8522A", fontSize: 13, fontWeight: 700, cursor: "pointer", padding: "6px 0", display: "block", fontFamily: "Georgia,serif" },
   toast: { position: "fixed", top: 68, left: "50%", transform: "translateX(-50%)", background: "#1A1A2E", color: "#fff", padding: "10px 22px", borderRadius: 20, fontSize: 13, fontWeight: 700, zIndex: 9999, boxShadow: "0 4px 20px rgba(0,0,0,0.25)", whiteSpace: "nowrap", pointerEvents: "none" },
   syncBar: { position: "fixed", top: 0, left: 0, right: 0, background: "#5B7EC8", color: "#fff", textAlign: "center", fontSize: 12, padding: "4px", zIndex: 9998 },
+  toggleBtn: { padding: "8px 14px", borderRadius: 20, border: "none", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "Georgia,serif", whiteSpace: "nowrap" },
 };
