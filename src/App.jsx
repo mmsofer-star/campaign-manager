@@ -185,6 +185,16 @@ function Dashboard({ donors, campaign, raised, pledged, matching, peak, onSelect
   const c3r = donors.filter(d => d.circle === "THIRD" && d.status === "DONATED").reduce((s, d) => s + (d.actualAmount || 0), 0);
   const families = new Set(donors.filter(d => d.status === "DONATED").map(d => d.family || d.id)).size;
 
+  // ─── תחזית ───────────────────────────────────────────────
+  // סך הערכות תרומה של כל מי שעדיין לא תרם
+  const est1 = donors.filter(d => d.circle === "FIRST" && d.status !== "DONATED").reduce((s, d) => s + (d.estimatedAmount || 0), 0);
+  const est2 = donors.filter(d => d.circle === "SECOND" && d.status !== "DONATED").reduce((s, d) => s + (d.estimatedAmount || 0), 0);
+  const est3 = donors.filter(d => d.circle === "THIRD" && d.status !== "DONATED").reduce((s, d) => s + (d.estimatedAmount || 0), 0);
+  const totalEstimate = est1 + est2 + est3;
+  // תחזית כוללת = כבר נתרם + הערכות שנותרו
+  const forecastTotal = raised + totalEstimate;
+  const forecastPct = campaign.goal ? Math.min(100, Math.round((forecastTotal / campaign.goal) * 100)) : 0;
+
   const hp = donors.filter(d => d.circle === "FIRST" && d.status !== "DONATED").sort((a, b) => (b.estimatedAmount || 0) - (a.estimatedAmount || 0)).slice(0, 5);
   const fu = donors.filter(d => ["CONTACTED", "INTERESTED"].includes(d.status)).sort((a, b) => new Date(a.lastContact || 0) - new Date(b.lastContact || 0)).slice(0, 5);
   const nb = donors.filter(d => !["DONATED", "NOT_RELEVANT"].includes(d.status) && d.circle && d.circle !== "UNASSIGNED").sort((a, b) => {
@@ -238,6 +248,57 @@ function Dashboard({ donors, campaign, raised, pledged, matching, peak, onSelect
           <span>£{Math.max(0, campaign.goal - raised).toLocaleString()} to go</span>
         </div>
       </div>
+
+      {/* ─── תחזית ─── */}
+      {totalEstimate > 0 && (
+        <div style={{ ...S.card, background: "linear-gradient(135deg,#F0F7FF,#fff)", borderLeft: "4px solid #5B7EC8" }}>
+          <div style={S.ct}>📈 תחזית פוטנציאל</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 26, fontWeight: 700, color: "#5B7EC8" }}>£{forecastTotal.toLocaleString()}</div>
+              <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>תחזית כוללת (בפועל + הערכות)</div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: forecastPct >= 100 ? "#2E7D32" : "#5B7EC8" }}>{forecastPct}%</div>
+              <div style={{ fontSize: 11, color: "#aaa" }}>מהיעד</div>
+            </div>
+          </div>
+          <div style={{ background: "#e8e8e8", borderRadius: 99, height: 10, overflow: "hidden", position: "relative" }}>
+            {/* בפועל */}
+            <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${pct}%`, background: "#2E7D32", borderRadius: 99 }} />
+            {/* הערכה */}
+            <div style={{ position: "absolute", left: `${pct}%`, top: 0, height: "100%", width: `${Math.min(100 - pct, forecastPct - pct)}%`, background: "#5B7EC8", opacity: 0.5, borderRadius: 99 }} />
+          </div>
+          <div style={{ display: "flex", gap: 12, marginTop: 8, fontSize: 12 }}>
+            <span style={{ color: "#2E7D32" }}>■ £{raised.toLocaleString()} בפועל</span>
+            <span style={{ color: "#5B7EC8" }}>■ £{totalEstimate.toLocaleString()} הערכות</span>
+          </div>
+
+          {/* פירוט לפי מעגל */}
+          <div style={{ marginTop: 12, borderTop: "1px solid #eee", paddingTop: 10 }}>
+            {[
+              { l: "First Circle", e: est1, c: "#C8522A" },
+              { l: "Second Circle", e: est2, c: "#B07D2E" },
+              { l: "Third Circle", e: est3, c: "#4A7B6F" },
+            ].filter(x => x.e > 0).map(x => (
+              <div key={x.l} style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{ fontSize: 13, color: x.c, fontWeight: 600 }}>{x.l}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#555" }}>£{x.e.toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+          {forecastPct < 100 && (
+            <div style={{ marginTop: 10, fontSize: 13, color: "#C8522A", fontWeight: 600 }}>
+              ⚠️ חסר £{Math.max(0, campaign.goal - forecastTotal).toLocaleString()} להשלמת היעד לפי ההערכות הנוכחיות
+            </div>
+          )}
+          {forecastPct >= 100 && (
+            <div style={{ marginTop: 10, fontSize: 13, color: "#2E7D32", fontWeight: 600 }}>
+              ✓ ההערכות הנוכחיות מכסות את היעד!
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={S.card}>
         <div style={S.ct}>Circle Breakdown</div>
