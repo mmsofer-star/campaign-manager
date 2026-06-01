@@ -137,9 +137,10 @@ export default function App() {
     })();
   }, [user]);
 
-  // שמור תורמים שלי
+ // שמור תורמים שלי
   useEffect(() => {
     if (!loaded || !user) return;
+    if (myDonors.length === 0) return;
     clearTimeout(saveTimer.current.donors);
     saveTimer.current.donors = setTimeout(() => saveDonors(user.id, myDonors), 1500);
   }, [myDonors, loaded]);
