@@ -27,12 +27,9 @@ async function createUser(id, email, passwordHash, name) {
 async function getDonors(userId) {
   const rows = await sbQ(`donors?user_id=eq.${userId}&select=data`);
   return rows?.map(r => r.data) || [];
-}
-async function saveDonors(userId, donors) {
-  // מחיקת כל התורמים של המשתמש ויצירה מחדש
-  await sbQ(`donors?user_id=eq.${userId}`, { method: "DELETE" });
+}async function saveDonors(userId, donors) {
   if (donors.length === 0) return;
-  const rows = donors.map(d => ({ id: d.id, user_id: userId, data: d }));
+  const rows = donors.map(d => ({ id: d.id, user_id: userId, data: d, updated_at: new Date().toISOString() }));
   await sbQ("donors", { method: "POST", body: JSON.stringify(rows), headers: { ...H, Prefer: "resolution=merge-duplicates" } });
 }
 
